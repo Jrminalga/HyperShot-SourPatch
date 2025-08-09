@@ -1,0 +1,729 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "HyperShot SourPatch",
+    LoadingTitle = "HyperShot SourPatch",
+    LoadingSubtitle = "by SourPatch",
+    Theme = "Default",
+    ConfigurationSaving = {
+       Enabled = true,
+       FolderName = nil,
+       FileName = "UniversalConfigs"
+    },
+    Discord = {
+       Enabled = false,
+       Invite = "noinvitelink",
+       RememberJoins = true
+    },
+    KeySystem = false,
+    KeySettings = {
+       Title = "Untitled",
+       Subtitle = "Key System",
+       Note = "No method of obtaining the key is provided",
+       FileName = "Key",
+       SaveKey = true,
+       GrabKeyFromSite = false,
+       Key = {"Hello"}
+    }
+})
+
+local MainTab = Window:CreateTab("Main", "apple")
+local visualsTab = Window:CreateTab("Visuals", "eye")
+local AutoTab = Window:CreateTab("Automation", "repeat")
+
+
+local SilentAimSection = AutoTab:CreateSection("Silent Aim")
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+local WorldToScreenPoint = Camera.WorldToScreenPoint
+local GetPlayers = Players.GetPlayers
+local FindFirstChild = game.FindFirstChild
+
+local SilentAimEnabled = false  -- toggle variable
+
+local function GetOnScreenPosition(V3)
+    local Position, IsVisible = WorldToScreenPoint(Camera, V3)
+    return Vector2.new(Position.X, Position.Y), IsVisible
+end
+
+local function GetDirection(Origin, Position)
+    return (Position - Origin).Unit * (Origin - Position).Magnitude
+end
+
+local function GetMousePosition()
+    return Vector2.new(Mouse.X, Mouse.Y)
+end
+
+local function GetClosestPlayer()
+    local Closest, Distance = nil, 10000
+    for _, Player in next, GetPlayers(Players) do
+        if Player ~= LocalPlayer then
+            local Character = Player.Character
+            local Head = Character and FindFirstChild(Character, "Head")
+            local Humanoid = Character and FindFirstChild(Character, "Humanoid")
+            if Head and (Humanoid and Humanoid.Health > 0) then
+                local ScreenPos, IsVisible = GetOnScreenPosition(Head.Position)
+                if IsVisible then
+                    local _Distance = (GetMousePosition() - ScreenPos).Magnitude
+                    if _Distance <= Distance then
+                        Closest = Head
+                        Distance = _Distance
+                    end
+                end
+            end
+        end
+    end
+    return Closest, Distance
+end
+
+-- Add toggle button for Silent Aim
+AutoTab:CreateToggle({
+    Name = "Silent Aim (doesnt work on bots)",
+    CurrentValue = false,
+    Flag = "SilentAimToggle",
+    Callback = function(value)
+        SilentAimEnabled = value
+    end
+})
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(...)
+    local Method = getnamecallmethod()
+    local Arguments = {...}
+
+    if Arguments[1] == workspace and Method == "Raycast" then
+        if not SilentAimEnabled then
+            return oldNamecall(...)
+        end
+
+        if typeof(Arguments[#Arguments]) ~= "RaycastParams" then
+            return oldNamecall(...)
+        end
+
+        local HitPart = GetClosestPlayer()
+        if HitPart then
+            Arguments[3] = GetDirection(Arguments[2], HitPart.Position)
+            return oldNamecall(unpack(Arguments))
+        end
+    end
+
+    return oldNamecall(...)
+end)
+
+
+local HitboxSection = AutoTab:CreateSection("Hitbox")
+
+-- Default values
+_G.HeadSize = 10
+_G.HitboxEnabled = false
+
+-- Toggle for hitbox
+AutoTab:CreateToggle({
+    Name = "Enable Hitbox",
+    CurrentValue = _G.HitboxEnabled,
+    Flag = "HitboxToggle",
+    Callback = function(Value)
+        _G.HitboxEnabled = Value
+    end,
+})
+
+-- Slider for hitbox size
+AutoTab:CreateSlider({
+    Name = "Hitbox Size",
+    Range = {2, 200}, -- Min and Max size
+    Increment = 1,
+    Suffix = " studs",
+    CurrentValue = _G.HeadSize,
+    Flag = "HitboxSizeSlider",
+    Callback = function(Value)
+        _G.HeadSize = Value
+    end,
+})
+
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local LocalPlayer = Players.LocalPlayer
+local MobsFolder = workspace:FindFirstChild("Mobs")
+
+local function applyPropertiesToPart(part)
+    if part then
+        part.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
+        part.Transparency = 1
+        part.CanCollide = false
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.HitboxEnabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                pcall(function()
+                    applyPropertiesToPart(player.Character.HumanoidRootPart)
+                end)
+            end
+        end
+
+        if MobsFolder then
+            for _, mob in ipairs(MobsFolder:GetChildren()) do
+                if mob:IsA("Model") and mob:FindFirstChild("HumanoidRootPart") then
+                    pcall(function()
+                        applyPropertiesToPart(mob.HumanoidRootPart)
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+local RecoilSection = AutoTab:CreateSection("No Recoil")
+
+-- No Recoil functionality
+-- Store original recoil values so we can restore them later
+local originalValues = {}
+
+local function setNoRecoil(enable)
+    for _, v in next, getgc(true) do
+        if typeof(v) == 'table' and rawget(v, 'Spread') then
+            if enable then
+                -- Save original values first time toggle is enabled
+                if not originalValues[v] then
+                    originalValues[v] = {
+                        Spread = v.Spread,
+                        BaseSpread = v.BaseSpread,
+                        MinCamRecoil = v.MinCamRecoil,
+                        MaxCamRecoil = v.MaxCamRecoil,
+                        MinRotRecoil = v.MinRotRecoil,
+                        MaxRotRecoil = v.MaxRotRecoil,
+                        MinTransRecoil = v.MinTransRecoil,
+                        MaxTransRecoil = v.MaxTransRecoil,
+                        ScopeSpeed = v.ScopeSpeed
+                    }
+                end
+
+                rawset(v, 'Spread', 0)
+                rawset(v, 'BaseSpread', 0)
+                rawset(v, 'MinCamRecoil', Vector3.new())
+                rawset(v, 'MaxCamRecoil', Vector3.new())
+                rawset(v, 'MinRotRecoil', Vector3.new())
+                rawset(v, 'MaxRotRecoil', Vector3.new())
+                rawset(v, 'MinTransRecoil', Vector3.new())
+                rawset(v, 'MaxTransRecoil', Vector3.new())
+                rawset(v, 'ScopeSpeed', 100)
+            else
+                -- Restore original values when disabling no recoil
+                local orig = originalValues[v]
+                if orig then
+                    rawset(v, 'Spread', orig.Spread)
+                    rawset(v, 'BaseSpread', orig.BaseSpread)
+                    rawset(v, 'MinCamRecoil', orig.MinCamRecoil)
+                    rawset(v, 'MaxCamRecoil', orig.MaxCamRecoil)
+                    rawset(v, 'MinRotRecoil', orig.MinRotRecoil)
+                    rawset(v, 'MaxRotRecoil', orig.MaxRotRecoil)
+                    rawset(v, 'MinTransRecoil', orig.MinTransRecoil)
+                    rawset(v, 'MaxTransRecoil', orig.MaxTransRecoil)
+                    rawset(v, 'ScopeSpeed', orig.ScopeSpeed)
+                end
+            end
+        end
+    end
+end
+
+-- Create toggle in the Automation tab
+AutoTab:CreateToggle({
+    Name = "No Recoil",
+    CurrentValue = false,
+    Flag = "NoRecoilToggle",
+    Callback = function(value)
+        setNoRecoil(value)
+    end
+})
+
+-- Flight variables
+local flyEnabled = false -- The toggle state
+local flying = false     -- The "currently in the air" state
+local flyBV
+local flyConnection1, flyConnection2
+local currentFlySpeed = 50
+
+-- Create speed slider
+local SpeedSlider = MainTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {1, 200},
+    Increment = 1,
+    Suffix = " studs",
+    CurrentValue = currentFlySpeed,
+    Flag = "FlySpeedSlider",
+    Callback = function(Value)
+        currentFlySpeed = Value
+    end,
+})
+
+-- Setup flight on current character
+local function setupFly()
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+
+    -- Make sure connections are cleared before re-adding
+    if flyConnection1 then
+        pcall(function() flyConnection1:Disconnect() end)
+        flyConnection1 = nil
+    end
+    if flyConnection2 then
+        pcall(function() flyConnection2:Disconnect() end)
+        flyConnection2 = nil
+    end
+
+    -- F key toggle for actual flying
+    flyConnection1 = game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed and input.KeyCode == Enum.KeyCode.F and flyEnabled then
+            flying = not flying
+            if flying then
+                humanoid.PlatformStand = true
+                flyBV = Instance.new("BodyVelocity")
+                flyBV.Name = "FlyBV"
+                flyBV.Velocity = Vector3.new(0, 0, 0)
+                flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                flyBV.P = 10000
+                flyBV.Parent = humanoid.RootPart
+
+                Rayfield:Notify({
+                    Title = "Fly",
+                    Content = "Activated",
+                    Duration = 1,
+                })
+            else
+                humanoid.PlatformStand = false
+                if flyBV then
+                    flyBV:Destroy()
+                    flyBV = nil
+                end
+
+                Rayfield:Notify({
+                    Title = "Fly",
+                    Content = "Deactivated",
+                    Duration = 1,
+                })
+            end
+        end
+    end)
+
+    -- Movement control
+    flyConnection2 = game:GetService("RunService").Heartbeat:Connect(function()
+        if flying and humanoid and humanoid.RootPart then
+            local root = humanoid.RootPart
+            local cam = workspace.CurrentCamera
+
+            local forward = cam.CFrame.LookVector
+            local right = cam.CFrame.RightVector
+            local up = Vector3.new(0, 1, 0)
+
+            local direction = Vector3.new(0, 0, 0)
+            local UIS = game:GetService("UserInputService")
+
+            if UIS:IsKeyDown(Enum.KeyCode.W) then direction = direction + forward end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then direction = direction - forward end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then direction = direction + right end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then direction = direction - right end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then direction = direction + up end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then direction = direction - up end
+
+            if direction.Magnitude > 0 then
+                direction = direction.Unit * currentFlySpeed
+            end
+
+            if flyBV then
+                flyBV.Velocity = direction
+            end
+        end
+    end)
+end
+
+-- Reapply on respawn if enabled
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    if flyEnabled then
+        task.wait(0.1)
+        setupFly()
+    end
+end)
+
+-- UI toggle
+local FlyToggle = MainTab:CreateToggle({
+    Name = "Fly (Press F to activate)",
+    CurrentValue = false,
+    Flag = "FlyToggle",
+    Callback = function(Value)
+        flyEnabled = Value
+
+        -- Notify the player of the toggle state (system enabled/disabled)
+        Rayfield:Notify({
+            Title = "Fly",
+            Content = flyEnabled and "Enabled" or "Disabled",
+            Duration = 1,
+        })
+
+        -- Clean up old state
+        if flyConnection1 then pcall(function() flyConnection1:Disconnect() end) end
+        if flyConnection2 then pcall(function() flyConnection2:Disconnect() end) end
+        flyConnection1, flyConnection2 = nil, nil
+        flying = false
+
+        -- Remove BodyVelocity if turning off
+        local char = game.Players.LocalPlayer.Character
+        if char then
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.PlatformStand = false
+                if humanoid.RootPart and humanoid.RootPart:FindFirstChild("FlyBV") then
+                    humanoid.RootPart.FlyBV:Destroy()
+                end
+            end
+        end
+
+        if flyEnabled then
+            setupFly()
+        end
+    end,
+})
+
+
+-- Create section
+local SIGMABhop = MainTab:CreateSection("Bhop")
+
+-- Configuration variables
+local bhopToggledInGUI = false -- Whether the GUI toggle is enabled
+local bhopActive = false       -- Whether bhop is currently active (toggled by F)
+local noclipEnabled = false
+local noclipConnections = {}
+local bhopConnections = {}
+local bhopPower = 50
+local gravity = 150
+local movementSpeed = 100
+local lastJumpTime = 0
+local jumpCooldown = 0.2
+
+-- Function to clear old connections
+local function clearConnections()
+    for _, c in ipairs(bhopConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    bhopConnections = {}
+end
+
+-- Function to setup BHop on the current character
+local function setupBHop()
+    clearConnections()
+
+    local character = game.Players.LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+    if not humanoid or not rootPart then return end
+    
+    -- Create physics controller
+    local bodyForce = Instance.new("BodyForce")
+    bodyForce.Name = "BhopGravity"
+    bodyForce.Force = Vector3.new(0, -gravity * rootPart:GetMass(), 0)
+    bodyForce.Parent = rootPart
+
+    -- Jump handler
+    table.insert(bhopConnections, game:GetService("UserInputService").JumpRequest:Connect(function()
+        if bhopActive and (tick() - lastJumpTime) > jumpCooldown and rootPart then
+            rootPart.Velocity = Vector3.new(rootPart.Velocity.X, bhopPower, rootPart.Velocity.Z)
+            lastJumpTime = tick()
+        end
+    end))
+
+    -- Movement handler
+    table.insert(bhopConnections, game:GetService("RunService").Heartbeat:Connect(function()
+        if bhopActive and humanoid and rootPart then
+            if rootPart:FindFirstChild("BhopGravity") then
+                rootPart.BhopGravity.Force = Vector3.new(0, -gravity * rootPart:GetMass(), 0)
+            end
+
+            local cam = workspace.CurrentCamera
+            local forward = cam.CFrame.LookVector
+            local right = cam.CFrame.RightVector
+            forward = Vector3.new(forward.X, 0, forward.Z).Unit
+            right = Vector3.new(right.X, 0, right.Z).Unit
+
+            local direction = Vector3.new(0, 0, 0)
+            local UIS = game:GetService("UserInputService")
+
+            if UIS:IsKeyDown(Enum.KeyCode.W) then direction = direction + forward end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then direction = direction - forward end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then direction = direction + right end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then direction = direction - right end
+
+            if direction.Magnitude > 0 then
+                direction = direction.Unit * movementSpeed
+                rootPart.Velocity = Vector3.new(direction.X, rootPart.Velocity.Y, direction.Z)
+            else
+                rootPart.Velocity = Vector3.new(0, rootPart.Velocity.Y, 0)
+            end
+        end
+    end))
+end
+
+-- GUI Toggle (stores state if user wants bhop on)
+local BhopToggle = MainTab:CreateToggle({
+    Name = "BHop (Press F to toggle)",
+    CurrentValue = false,
+    Flag = "BhopToggle",
+    Callback = function(Value)
+        bhopToggledInGUI = Value
+        if not Value then
+            -- If GUI toggle disabled, forcibly turn off active bhop
+            bhopActive = false
+            clearConnections()
+            local char = game.Players.LocalPlayer.Character
+            if char then
+                local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                if rootPart and rootPart:FindFirstChild("BhopGravity") then
+                    rootPart.BhopGravity:Destroy()
+                end
+            end
+        end
+    end
+})
+
+-- Sliders
+local BhopPowerSlider = MainTab:CreateSlider({
+    Name = "BHop Power",
+    Range = {1, 200},
+    Increment = 1,
+    Suffix = " power",
+    CurrentValue = bhopPower,
+    Flag = "BhopPowerSlider",
+    Callback = function(Value)
+        bhopPower = Value
+    end,
+})
+
+local GravitySlider = MainTab:CreateSlider({
+    Name = "Gravity",
+    Range = {0, 500},
+    Increment = 1,
+    Suffix = " gravity",
+    CurrentValue = gravity,
+    Flag = "GravitySlider",
+    Callback = function(Value)
+        gravity = Value
+        if bhopActive and game.Players.LocalPlayer.Character then
+            local rootPart = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or game.Players.LocalPlayer.Character:FindFirstChild("Torso")
+            if rootPart and rootPart:FindFirstChild("BhopGravity") then
+                rootPart.BhopGravity.Force = Vector3.new(0, -gravity * rootPart:GetMass(), 0)
+            end
+        end
+    end,
+})
+
+local SpeedSlider = MainTab:CreateSlider({
+    Name = "Movement Speed",
+    Range = {50, 200},
+    Increment = 1,
+    Suffix = " speed",
+    CurrentValue = movementSpeed,
+    Flag = "SpeedSlider",
+    Callback = function(Value)
+        movementSpeed = Value
+    end,
+})
+
+-- Always listen for respawn and reapply BHop if active
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    if bhopActive then
+        task.wait(0.1) -- wait for character to fully load
+        setupBHop()
+    end
+end)
+
+-- Permanent F key listener (only toggles bhop if GUI toggle is enabled)
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.F then
+        if bhopToggledInGUI then
+            bhopActive = not bhopActive
+            if bhopActive then
+                setupBHop()
+            else
+                clearConnections()
+                local char = game.Players.LocalPlayer.Character
+                if char then
+                    local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                    if rootPart and rootPart:FindFirstChild("BhopGravity") then
+                        rootPart.BhopGravity:Destroy()
+                    end
+                end
+            end
+
+            Rayfield:Notify({
+                Title = "BHop",
+                Content = bhopActive and "Enabled" or "Disabled",
+                Duration = 1,
+            })
+        end
+    end
+end)
+
+
+-- No clip sections
+local SIGMAClip = MainTab:CreateSection("NoClip")
+
+-- NoClip function
+local function noclipLoop()
+    if noclipEnabled and game.Players.LocalPlayer.Character then
+        for _, v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
+end
+
+local NoclipToggle = MainTab:CreateToggle({
+    Name = "NoClip (Press N to toggle)",
+    CurrentValue = false,
+    Flag = "NoclipToggle",
+    Callback = function(Value)
+        noclipEnabled = Value
+        
+        if Value then
+            -- Enable NoClip
+            table.insert(noclipConnections, game:GetService("RunService").Stepped:Connect(noclipLoop))
+            
+            -- Toggle with N key
+            table.insert(noclipConnections, game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+                if not gameProcessed and input.KeyCode == Enum.KeyCode.N then
+                    noclipEnabled = not noclipEnabled
+                    Rayfield:Notify({
+                        Title = "NoClip",
+                        Content = noclipEnabled and "Enabled" or "Disabled",
+                        Duration = 1,
+                    })
+                end
+            end))
+        else
+            -- Disable NoClip and clean up connections
+            for _, connection in pairs(noclipConnections) do
+                connection:Disconnect()
+            end
+            noclipConnections = {}
+            
+            -- Restore collision
+            if game.Players.LocalPlayer.Character then
+                for _, v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        v.CanCollide = true
+                    end
+                end
+            end
+        end
+    end,
+})
+
+local CreateSection = visualsTab:CreateSection("Visuals")
+
+-- ESP settings
+local espEnabled = false
+local espColor = Color3.fromRGB(85, 170, 255)
+
+-- UI Controls
+visualsTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "ESP_Toggle",
+    Callback = function(Value)
+        espEnabled = Value
+    end
+})
+
+visualsTab:CreateColorPicker({
+    Name = "ESP Color",
+    Color = espColor,
+    Flag = "ESP_Color",
+    Callback = function(Value)
+        espColor = Value
+    end
+})
+
+-- Create SurfaceGui function
+function CreateSG(name, parent, face)
+    local SurfaceGui = Instance.new("SurfaceGui", parent)
+    SurfaceGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    SurfaceGui.Face = Enum.NormalId[face]
+    SurfaceGui.LightInfluence = 0
+    SurfaceGui.ResetOnSpawn = false
+    SurfaceGui.Name = name
+    SurfaceGui.AlwaysOnTop = true
+    local Frame = Instance.new("Frame", SurfaceGui)
+    Frame.BackgroundColor3 = espColor
+    Frame.Size = UDim2.new(1, 0, 1, 0)
+end
+
+local Players = game:GetService("Players")
+local MobsFolder = workspace:FindFirstChild("Mobs")
+
+while task.wait(1) do
+    if espEnabled then
+        -- Chams on players
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                for _, part in pairs(player.Character:GetChildren()) do
+                    if (part:IsA("MeshPart") or part.Name == "Head") and part:FindFirstChild("cham") == nil then
+                        CreateSG("cham", part, "Back")
+                        CreateSG("cham", part, "Front")
+                        CreateSG("cham", part, "Left")
+                        CreateSG("cham", part, "Right")
+                        CreateSG("cham", part, "Top")
+                        CreateSG("cham", part, "Bottom")
+                    end
+                end
+            end
+        end
+
+        -- Chams on mobs
+        if MobsFolder then
+            for _, mob in pairs(MobsFolder:GetChildren()) do
+                if mob:IsA("Model") then
+                    for _, part in pairs(mob:GetChildren()) do
+                        if (part:IsA("MeshPart") or part.Name == "Head") and part:FindFirstChild("cham") == nil then
+                            CreateSG("cham", part, "Back")
+                            CreateSG("cham", part, "Front")
+                            CreateSG("cham", part, "Left")
+                            CreateSG("cham", part, "Right")
+                            CreateSG("cham", part, "Top")
+                            CreateSG("cham", part, "Bottom")
+                        end
+                    end
+                end
+            end
+        end
+    else
+        -- Remove all ESP when disabled
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character then
+                for _, part in pairs(player.Character:GetChildren()) do
+                    if part:IsA("BasePart") and part:FindFirstChild("cham") then
+                        part.cham:Destroy()
+                    end
+                end
+            end
+        end
+        if MobsFolder then
+            for _, mob in pairs(MobsFolder:GetChildren()) do
+                for _, part in pairs(mob:GetChildren()) do
+                    if part:IsA("BasePart") and part:FindFirstChild("cham") then
+                        part.cham:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end
