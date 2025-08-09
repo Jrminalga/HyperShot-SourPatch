@@ -1,1 +1,1 @@
-# HyperShot-SourPatch
+loadstring(game:HttpGet(''))()
